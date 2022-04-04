@@ -1,4 +1,4 @@
-import { getJoinPacket } from "./kadPTPmessage";
+import { getJoinPacket } from "./KADpackets";
 import { DHTADT, Peer, K_bucket } from "./types";
 import singleton from "./Singleton";
 import net from "net"
@@ -22,6 +22,25 @@ export function updateDHTtable(DHTtable: DHTADT, list: Array<Peer>) {
         console.log(output);
     }
 
+}
+
+export function getClosest(dht: DHTADT): Peer{
+    /*
+    let peerList: Array<K_bucket> = dht.table;
+    let closestIndex: number = 0
+
+    peerList.forEach((e: K_bucket, i: number) => {
+        let newBits = new Number(singleton.XORing(dht.owner.peerID, e.peer.peerID)).valueOf()
+        let prevBits = new Number(singleton.XORing(dht.owner.peerID, peerList[closestIndex].peer.peerID )).valueOf()
+        
+        if(newBits < prevBits){
+            closestIndex = i
+        }
+    })
+
+    return peerList[closestIndex].peer
+    */
+   return dht.table[0].peer
 }
 
 export function refreshBucket(T: DHTADT, peersList: Array<Peer>) {
@@ -85,6 +104,7 @@ export async function sendHello(T: DHTADT) {
 // This method call itself (T.table.length) number of times,
 // each time it sends hello messags to all peers in T
 export function echoPeer(T: DHTADT, i: number): Promise<null> {
+    console.log("Sending Hello \n")
     return new Promise((resolve) => {
         setTimeout(() => {
             let sock = new net.Socket();
@@ -107,18 +127,20 @@ export function echoPeer(T: DHTADT, i: number): Promise<null> {
                 setTimeout(() => {
                     sock.end();
                     sock.destroy();
-                    resolve(null);
                 }, 500)
             }
             );
-            sock.on('close', async () => {
+            sock.on('close', () => {
                 i++;
                 if (i < T.table.length) {
-                    await echoPeer(T, i)
+                    echoPeer(T, i).then(()=> {
+                        resolve(null)
+                    })
                 }
             })
             if (i == T.table.length - 1) {
-                console.log("Hello packet has been sent.\n");
+                console.log("Hello packets have been sent.\n");
+                resolve(null);
             }
         }, 500)
     })

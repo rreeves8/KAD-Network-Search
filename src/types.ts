@@ -44,7 +44,7 @@ type SearchPacket = {
 
 type ImagePacket = {
     version: number
-    messageType: number
+    messageType: number | string
     sequenceNumber: number
     timeStamp: number
     imageSize: number

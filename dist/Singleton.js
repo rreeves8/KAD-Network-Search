@@ -1,5 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+//@ts-nocheck
 let sequenceNumber;
 let timerInterval = 10;
 let timer;

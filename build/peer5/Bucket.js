@@ -12,8 +12,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.echoPeer = exports.sendHello = exports.pushBucket = exports.refreshBucket = exports.updateDHTtable = void 0;
-const kadPTPmessage_1 = require("./kadPTPmessage");
+exports.echoPeer = exports.sendHello = exports.pushBucket = exports.refreshBucket = exports.getClosest = exports.updateDHTtable = void 0;
+const KADpackets_1 = require("./KADpackets");
 const Singleton_1 = __importDefault(require("./Singleton"));
 const net_1 = __importDefault(require("net"));
 function updateDHTtable(DHTtable, list) {
@@ -34,6 +34,25 @@ function updateDHTtable(DHTtable, list) {
     }
 }
 exports.updateDHTtable = updateDHTtable;
+function getClosest(dht) {
+    /*
+    let peerList: Array<K_bucket> = dht.table;
+    let closestIndex: number = 0
+
+    peerList.forEach((e: K_bucket, i: number) => {
+        let newBits = new Number(singleton.XORing(dht.owner.peerID, e.peer.peerID)).valueOf()
+        let prevBits = new Number(singleton.XORing(dht.owner.peerID, peerList[closestIndex].peer.peerID )).valueOf()
+        
+        if(newBits < prevBits){
+            closestIndex = i
+        }
+    })
+
+    return peerList[closestIndex].peer
+    */
+    return dht.table[0].peer;
+}
+exports.getClosest = getClosest;
 function refreshBucket(T, peersList) {
     peersList.forEach(P => {
         pushBucket(T, P);
@@ -95,6 +114,7 @@ exports.sendHello = sendHello;
 // This method call itself (T.table.length) number of times,
 // each time it sends hello messags to all peers in T
 function echoPeer(T, i) {
+    console.log("Sending Hello \n");
     return new Promise((resolve) => {
         setTimeout(() => {
             let sock = new net_1.default.Socket();
@@ -102,7 +122,7 @@ function echoPeer(T, i) {
                 let peerList = T.table.map((e) => {
                     return e.peer;
                 });
-                let packet = (0, kadPTPmessage_1.getJoinPacket)({
+                let packet = (0, KADpackets_1.getJoinPacket)({
                     version: 7,
                     messageType: 2,
                     numberOfPeers: peerList.length,
@@ -113,17 +133,19 @@ function echoPeer(T, i) {
                 setTimeout(() => {
                     sock.end();
                     sock.destroy();
-                    resolve(null);
                 }, 500);
             });
-            sock.on('close', () => __awaiter(this, void 0, void 0, function* () {
+            sock.on('close', () => {
                 i++;
                 if (i < T.table.length) {
-                    yield echoPeer(T, i);
+                    echoPeer(T, i).then(() => {
+                        resolve(null);
+                    });
                 }
-            }));
+            });
             if (i == T.table.length - 1) {
-                console.log("Hello packet has been sent.\n");
+                console.log("Hello packets have been sent.\n");
+                resolve(null);
             }
         }, 500);
     });

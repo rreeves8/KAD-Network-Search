@@ -2,8 +2,9 @@ const fs = require('fs');
 
 let root = __dirname
 
+//loop through each peer folder, make copies of each processed js files into the peer folders
 for (let i = 1; i <= 5; i++) {
-    let fileNames = ["Bucket.js", "KADpeer.js", "kadPTPmessage.js", "Singleton.js"]
+    let fileNames = ["Bucket.js", "KADpeer.js", "KADpackets.js", "Singleton.js"]
 
     fileNames.forEach(e => {
         if (!fs.existsSync(root + `\\build\\peer` + i.toString() + `\\`)){

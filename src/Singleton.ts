@@ -1,4 +1,4 @@
-
+//@ts-nocheck
 let sequenceNumber;
 let timerInterval = 10;
 let timer;

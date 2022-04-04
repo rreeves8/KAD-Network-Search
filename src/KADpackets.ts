@@ -249,7 +249,11 @@ const dissectImagePacket = (message: Buffer): ImagePacket => {
     let header = message.slice(0, 12);
     let payload = message.slice(12);
 
-    let responseName = {
+    interface ResponseADT {
+        [key: number]: string
+    }
+
+    let responseName: ResponseADT = {
         0: "Query",
         1: "Found",
         2: "Not found",
@@ -293,7 +297,7 @@ function parseBitPacket(packet: any, offset: any, length: any) {
 function stringToBytes(str: string): Array<any> {
     var ch,
         st,
-        re = [];
+        re : Array<any> = [];
     for (var i = 0; i < str.length; i++) {
         ch = str.charCodeAt(i); // get char
         st = []; // set up "stack"

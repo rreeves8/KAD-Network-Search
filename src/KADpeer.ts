@@ -2,14 +2,22 @@ import net, { Socket } from "net"
 import { DHTADT, Peer, Self, JoinPacket, SearchPacket, K_bucket } from "./types";
 import singleton from "./Singleton"
 import os from "os"
-import { dissectImagePacket, dissectJoinPacket, dissectSearchPacket, getImagePacket, getJoinPacket, getSearchPacket } from "./kadPTPmessage";
-import { pushBucket, updateDHTtable, sendHello } from "./Bucket";
+import { dissectImagePacket, dissectJoinPacket, dissectSearchPacket, getImagePacket, getJoinPacket, getSearchPacket } from "./KADpackets";
+import { pushBucket, updateDHTtable, sendHello, getClosest } from "./Bucket";
 import fs from "fs"
 import open from "open"
 
 singleton.init();
 
-let portOBJ = {
+interface PortADT {
+    [key: string]: number
+}
+
+interface ImageADT {
+    [key: string]: string
+}
+
+let portOBJ: PortADT = {
     "peer1": 2001,
     "peer2": 2055,
     "peer3": 2077,
@@ -17,7 +25,7 @@ let portOBJ = {
     "peer5": 2005,
 }
 
-let imageName = {
+let imageName: ImageADT = {
     "peer1": "Canna.gif",
     "peer2": "Flicker.jpeg",
     "peer3": "CherryBlossom.gif",
@@ -36,6 +44,7 @@ let serverImageName = imageName[myName]
 // get the loaclhost ip address
 
 Object.keys(ifaces).forEach(function (ifname) {
+    //@ts-ignore
     ifaces[ifname].forEach(function (iface) {
         if ("IPv4" == iface.family && iface.internal !== false) {
             HOST = iface.address;
@@ -100,7 +109,7 @@ const main = async () => {
 
 const search = (searchPacket: SearchPacket, resolve: any) => {
     let clientSocket = new net.Socket()
-    let closestPeer: Peer = serverDHT.table[0].peer
+    let closestPeer: Peer = getClosest(serverDHT)
 
     try {
         clientSocket.connect({ port: closestPeer.peerPort, host: closestPeer.peerIP }, () => {
@@ -111,7 +120,7 @@ const search = (searchPacket: SearchPacket, resolve: any) => {
             }
         })
     }
-    catch(e) {
+    catch (e) {
         console.log(e)
         if (resolve) {
             resolve(null)
@@ -131,11 +140,10 @@ const imageServer = (imageName: string) => {
         socket.on("data", (data) => {
             let imagePacket = dissectImagePacket(data)
 
-            console.log("Got image Packet \n" + 
+            console.log("Got image Packet \n" +
                 "Version: " + imagePacket.version + "\n" +
                 "sequenceNumber: " + imagePacket.sequenceNumber + "\n" +
-                "timeStamp: " + imagePacket.timeStamp + "\n" +
-                "Version: " + imagePacket.version + "\n" 
+                "timeStamp: " + imagePacket.timeStamp + "\n" 
             )
 
             fs.writeFileSync(imageName, imagePacket.imageData);
@@ -161,7 +169,7 @@ const connectToNetwork = (): Promise<null> => {
 
             serverPeer = {
                 peerName: myName, // client name
-                peerIP: clientSocket.localAddress,
+                peerIP: clientSocket.localAddress as string,
                 peerPort: PORT,
                 peerID: clientID,
                 keyID: singleton.getKeyID(imageName[myName]),
@@ -173,76 +181,71 @@ const connectToNetwork = (): Promise<null> => {
                 table: []
             }
 
-            await ((): Promise<null> => {
-                return new Promise(resolve => {
-                    let senderPeerID = singleton.getPeerID(clientSocket.remoteAddress, clientSocket.remotePort)
 
-                    clientSocket.on('data', (message: Buffer) => {
-                        let kadPacket: JoinPacket = dissectJoinPacket(message);
+            let senderPeerID = singleton.getPeerID(clientSocket.remoteAddress, clientSocket.remotePort)
 
-                        let senderPeerName = kadPacket.senderName;
-                        let senderPeer: Peer = {
-                            peerName: senderPeerName,
-                            peerIP: clientSocket.remoteAddress,
-                            peerPort: clientSocket.remotePort,
-                            peerID: senderPeerID
-                        };
+            clientSocket.on('data', (message: Buffer) => {
+                let kadPacket: JoinPacket = dissectJoinPacket(message);
 
-                        if (kadPacket.messageType == 1) {
-                            // This message comes from the server
-                            console.log(
-                                "Connected to " +
-                                senderPeerName +
-                                ":" +
-                                clientSocket.remotePort +
-                                " at timestamp: " +
-                                singleton.getTimestamp() + "\n"
-                            );
+                let senderPeerName = kadPacket.senderName;
+                let senderPeer: Peer = {
+                    peerName: senderPeerName,
+                    peerIP: clientSocket.remoteAddress as string,
+                    peerPort: clientSocket.remotePort as number,
+                    peerID: senderPeerID
+                };
 
-                            runServer(myName, clientSocket.localAddress, clientSocket.localPort, serverDHT)
+                if (kadPacket.messageType == 1) {
+                    // This message comes from the server
+                    console.log(
+                        "Connected to " +
+                        senderPeerName +
+                        ":" +
+                        clientSocket.remotePort +
+                        " at timestamp: " +
+                        singleton.getTimestamp() + "\n"
+                    );
 
-                            console.log("Received Welcome message from " + senderPeerName) + "\n";
-                            if (kadPacket.peerList.length > 0) {
-                                let output = "  along with DHT: ";
-                                for (var i = 0; i < kadPacket.peerList.length; i++) {
-                                    output +=
-                                        "[" +
-                                        kadPacket.peerList[i].peerIP + ":" +
-                                        kadPacket.peerList[i].peerPort + ", " +
-                                        kadPacket.peerList[i].peerID +
-                                        "]\n                  ";
-                                }
-                                console.log(output);
-                            } else {
-                                console.log("  along with DHT: []\n");
-                            }
+                    runServer(myName, clientSocket.localAddress as string, clientSocket.localPort as number, serverDHT)
 
-                            // add the bootstrap node into the DHT table but only if it is not exist already
-                            let exist = serverDHT.table.find(e => e.peer.peerPort == clientSocket.remotePort);
-                            if (!exist) {
-                                pushBucket(serverDHT, senderPeer);
-                            } else {
-                                console.log(senderPeer.peerPort + " is exist already")
-                            }
-
-                            updateDHTtable(serverDHT, kadPacket.peerList)
-
-                        } else {
-                            // Later we will consider other message types.
-                            console.log("The message type " + kadPacket.messageType + " is not supported")
+                    console.log("Received Welcome message from " + senderPeerName) + "\n";
+                    if (kadPacket.peerList.length > 0) {
+                        let output = "  along with DHT: ";
+                        for (var i = 0; i < kadPacket.peerList.length; i++) {
+                            output +=
+                                "[" +
+                                kadPacket.peerList[i].peerIP + ":" +
+                                kadPacket.peerList[i].peerPort + ", " +
+                                kadPacket.peerList[i].peerID +
+                                "]\n                  ";
                         }
-                    });
+                        console.log(output);
+                    } else {
+                        console.log("  along with DHT: []\n");
+                    }
 
-                    clientSocket.on("end", async () => {
-                        // disconnected from server
-                        await sendHello(serverDHT)
-                        resolve(null)
-                        clientSocket.destroy()
-                    })
+                    // add the bootstrap node into the DHT table but only if it is not exist already
+                    let exist = serverDHT.table.find(e => e.peer.peerPort == clientSocket.remotePort);
+                    if (!exist) {
+                        pushBucket(serverDHT, senderPeer);
+                    } else {
+                        console.log(senderPeer.peerPort + " is exist already")
+                    }
+
+                    updateDHTtable(serverDHT, kadPacket.peerList)
+
+                } else {
+                    // Later we will consider other message types.
+                    console.log("The message type " + kadPacket.messageType + " is not supported")
+                }
+            });
+            clientSocket.on("end",  () => {
+                // disconnected from server
+                sendHello(serverDHT).then(() => {
+                    clientSocket.destroy()
+                    resolve(null)     
                 })
-            })()
-
-            resolve(null)
+            })
         });
     })
 }
@@ -274,16 +277,16 @@ const runServer = (clientName: string, localAddress: string, localPort: number, 
 }
 
 function handleClient(sock: Socket, serverDHTtable: DHTADT) {
-    let kadPacket = null
+    let kadPacket: JoinPacket | null = null
     let joiningPeerAddress = sock.remoteAddress + ":" + sock.remotePort;
-    let rawData: Buffer = null
+    let rawData: Buffer | null = null
 
     // initialize client DHT table
     let joiningPeerID = singleton.getPeerID(sock.remoteAddress, sock.remotePort)
     let joiningPeer: Peer = {
         peerName: "",
-        peerIP: sock.remoteAddress,
-        peerPort: sock.remotePort,
+        peerIP: sock.remoteAddress as string,
+        peerPort: sock.remotePort as number,
         peerID: joiningPeerID
     };
 
@@ -327,15 +330,15 @@ function handleClient(sock: Socket, serverDHTtable: DHTADT) {
                 updateDHTtable(serverDHTtable, kadPacket.peerList);
             }
             if (kadPacket.messageType === 3) {
-                let searchPacket = dissectSearchPacket(rawData)
+                let searchPacket = dissectSearchPacket(rawData as Buffer)
                 console.log("Received Search Message from " + searchPacket.senderName + "\n");
                 console.log(
                     "Version: " + searchPacket.version + "\n" +
                     "TimeStamp: " + singleton.getTimestamp() + "\n" +
                     "Request Type: " + "Query" + "\n" +
-                    "Image Name:" + searchPacket.imageName + "." + searchPacket.imageType + "\n"
+                    "Image Name: " + searchPacket.imageName + "\n"
                 )
-
+                    
                 await new Promise(resolve => setTimeout(resolve, 500));
 
                 await ((): Promise<null> => {

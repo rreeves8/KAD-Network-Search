@@ -1,4 +1,4 @@
-import { dissectJoinPacket, getJoinPacket, getImagePacket, dissectImagePacket, getSearchPacket, dissectSearchPacket } from "./kadPTPmessage";
+import { dissectJoinPacket, getJoinPacket, getImagePacket, dissectImagePacket, getSearchPacket, dissectSearchPacket } from "./KADpackets";
 import { K_bucket, Peer } from "./types";
 import fs from "fs"
 import open from "open"
