@@ -59,20 +59,23 @@ let serverDHT: DHTADT;
 
 const main = async () => {
     try {
+        //load this if args provided
         if (process.argv.length > 2) {
+            //run connect to network function and wait for completion till next step
             await connectToNetwork()
 
             console.log("Joined Network \n")
-
+            //if an image is provided in the args
             if (process.argv[5]) {
                 let imageName = process.argv[5]
 
                 console.log("Searching the network for image: " + imageName + "\n")
-
+                //start the image server 
                 imageServer(imageName)
 
                 let imageComp = imageName.split('.')
 
+                //run the search function and look for the image, the search function just sends the packet to the cosest peer
                 search({
                     version: 7,
                     messageType: 3,
@@ -84,7 +87,10 @@ const main = async () => {
                 }, null)
             }
 
-        } else {
+        } 
+        //load this if no args provided
+        else {
+            //assign server peer values
             serverPeer = {
                 peerName: myName,
                 peerIP: HOST,
@@ -94,11 +100,13 @@ const main = async () => {
                 keyID: singleton.getKeyID(imageName[myName]),
             };
 
+            //assign dht table
             serverDHT = {
                 owner: serverPeer,
                 table: []
             }
 
+            //run server
             runServer(serverPeer.peerName, serverPeer.peerIP, serverPeer.peerPort, serverDHT)
         }
     }
@@ -107,6 +115,7 @@ const main = async () => {
     }
 }
 
+//this function sends the search packet to the next closest peer, resolve if a promise is used for awaiting
 const search = (searchPacket: SearchPacket, resolve: any) => {
     let clientSocket = new net.Socket()
     let closestPeer: Peer = getClosest(serverDHT)
@@ -128,6 +137,7 @@ const search = (searchPacket: SearchPacket, resolve: any) => {
     }
 }
 
+//if the args have an image provided, run this server to wait for a peer to send it over
 const imageServer = (imageName: string) => {
     console.log("Creating Image server \n")
     let serverSocket = net.createServer();
@@ -154,14 +164,17 @@ const imageServer = (imageName: string) => {
     })
 }
 
+//this fires if the command line has provided a peer to connect to
 const connectToNetwork = (): Promise<null> => {
     return new Promise(resolve => {
         let clientSocket = new net.Socket();
+        //get provided server connection
         let firstFlag = process.argv[2]; // should be -p
         let hostserverIPandPort = process.argv[3].split(":");
         let knownHOST = hostserverIPandPort[0];
         let knownPORT = hostserverIPandPort[1];
 
+        //connect
         //@ts-ignore
         clientSocket.connect({ port: knownPORT, host: knownHOST, localPort: PORT }, async () => {
             // initialize client DHT table
@@ -184,9 +197,11 @@ const connectToNetwork = (): Promise<null> => {
 
             let senderPeerID = singleton.getPeerID(clientSocket.remoteAddress, clientSocket.remotePort)
 
+            //once connected, the server will reply with the join packet that contains all the bucket data
             clientSocket.on('data', (message: Buffer) => {
                 let kadPacket: JoinPacket = dissectJoinPacket(message);
 
+                //sender peer is the peer that we concted too
                 let senderPeerName = kadPacket.senderName;
                 let senderPeer: Peer = {
                     peerName: senderPeerName,
@@ -205,9 +220,10 @@ const connectToNetwork = (): Promise<null> => {
                         " at timestamp: " +
                         singleton.getTimestamp() + "\n"
                     );
-
+                    //run my own server 
                     runServer(myName, clientSocket.localAddress as string, clientSocket.localPort as number, serverDHT)
 
+                    //display packet data
                     console.log("Received Welcome message from " + senderPeerName) + "\n";
                     if (kadPacket.peerList.length > 0) {
                         let output = "  along with DHT: ";
@@ -231,7 +247,7 @@ const connectToNetwork = (): Promise<null> => {
                     } else {
                         console.log(senderPeer.peerPort + " is exist already")
                     }
-
+                    //add details from join packet to my own table
                     updateDHTtable(serverDHT, kadPacket.peerList)
 
                 } else {
@@ -239,6 +255,7 @@ const connectToNetwork = (): Promise<null> => {
                     console.log("The message type " + kadPacket.messageType + " is not supported")
                 }
             });
+            //when the server kills the connection, send hello's to other peers
             clientSocket.on("end",  () => {
                 // disconnected from server
                 sendHello(serverDHT).then(() => {
@@ -250,6 +267,7 @@ const connectToNetwork = (): Promise<null> => {
     })
 }
 
+//server function, handles all requests after the peer has either joined the network or started a new one
 const runServer = (clientName: string, localAddress: string, localPort: number, DHTtable: DHTADT) => {
     let myReceivingPort = null;
     let mySendingPort = null;
@@ -257,6 +275,7 @@ const runServer = (clientName: string, localAddress: string, localPort: number, 
     myReceivingPort = localPort;
     let localPeerID = singleton.getPeerID(localAddress, myReceivingPort);
 
+    //create the server socket
     let serverPeer = net.createServer();
     serverPeer.listen(myReceivingPort, localAddress);
     console.log(
@@ -276,6 +295,7 @@ const runServer = (clientName: string, localAddress: string, localPort: number, 
     });
 }
 
+//function for when a client joins my own server
 function handleClient(sock: Socket, serverDHTtable: DHTADT) {
     let kadPacket: JoinPacket | null = null
     let joiningPeerAddress = sock.remoteAddress + ":" + sock.remotePort;
@@ -292,14 +312,16 @@ function handleClient(sock: Socket, serverDHTtable: DHTADT) {
 
     // Triggered only when the client is sending kadPTP message
     sock.on('data', (message: Buffer) => {
+        //save the raw data and dissect it
         rawData = message
         kadPacket = dissectJoinPacket(message);
     });
 
     sock.on('end', async () => {
         // client edded the connection
+        //if a packet is provided, meaning the peer is on the network
         if (kadPacket) {
-            // Here, the msgType cannot be 1. It can be 2 or greater
+            //if kadpacket message type is 2, its a hello packet
             if (kadPacket.messageType === 2) {
                 console.log("Received Hello Message from " + kadPacket.senderName);
 
@@ -329,6 +351,7 @@ function handleClient(sock: Socket, serverDHTtable: DHTADT) {
                 // Now update the DHT table
                 updateDHTtable(serverDHTtable, kadPacket.peerList);
             }
+            //if cad packet is 3, its a search packet, re disect the raw data to a search packer
             if (kadPacket.messageType === 3) {
                 let searchPacket = dissectSearchPacket(rawData as Buffer)
                 console.log("Received Search Message from " + searchPacket.senderName + "\n");
@@ -339,17 +362,22 @@ function handleClient(sock: Socket, serverDHTtable: DHTADT) {
                     "Image Name: " + searchPacket.imageName + "\n"
                 )
                     
+                //wait 0.5s for fun
                 await new Promise(resolve => setTimeout(resolve, 500));
 
+                //wait for the server to either find the image, return it, or send the packet to aonther peer
                 await ((): Promise<null> => {
                     return new Promise(resolve => {
+                        //if the server has the image
                         if (singleton.getKeyID(searchPacket.imageName + "." + serverImageName.split(".")[1]) === serverPeer.keyID) {
                             console.log("The requested Image Was found, sending image \n")
+                            //get the image socket from the message
                             let imageSocket = new net.Socket()
 
                             let imgData = fs.readFileSync(__dirname + "\\" + serverImageName)
-
+                            //connect to the peers image server asking for the image
                             imageSocket.connect({ port: searchPacket.originatingImagePort, host: searchPacket.originatingIP }, () => {
+                                //send the image info to the peer
                                 imageSocket.write(getImagePacket({
                                     version: 7,
                                     messageType: 4,
@@ -363,9 +391,11 @@ function handleClient(sock: Socket, serverDHTtable: DHTADT) {
                             })
                         }
                         else {
+                            //image doesnt exist here, send the image request to the next closest peer
                             console.log("The requested Image Was not found, sending request to closest peer \n")
                             sock.end()
                             sock.destroy()
+                            //wait 0.5ms for fun, so socket can end and a new one can be made, after waiting run the search function
                             new Promise(resolve => setTimeout(resolve, 500)).then(() => {
                                 search(searchPacket, resolve)
                             })
